@@ -49,18 +49,19 @@ interface PluginCtx {
   [key: string]: unknown;
 }
 
+export function register(api: PluginApi) {
+  api.registerContextEngine(ENGINE_ID, (ctx: PluginCtx) =>
+    createGBrainContextEngine({
+      workspaceDir: ctx.workspaceDir,
+    }),
+  );
+}
+
 const entry: PluginEntry = {
   id: 'gbrain-context-engine',
   name: 'GBrain Context Engine',
   description: 'Deterministic temporal/spatial context injection on every turn',
-
-  register(api: PluginApi) {
-    api.registerContextEngine(ENGINE_ID, (ctx: PluginCtx) =>
-      createGBrainContextEngine({
-        workspaceDir: ctx.workspaceDir,
-      }),
-    );
-  },
+  register,
 };
 
 export default entry;
