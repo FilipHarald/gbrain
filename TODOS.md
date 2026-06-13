@@ -1,5 +1,195 @@
 # TODOS
 
+## gbrain triage wave follow-ups (filed v0.42.41.0)
+
+Deferred from the v0.42.41.0 fix wave (eng-reviewed as separate scope, not hotfixes).
+See plan + GSTACK REVIEW REPORT at
+`~/.claude/plans/system-instruction-you-are-working-zany-thacker.md`.
+
+- [ ] **P1 — supervisor: retry-with-backoff instead of hard stop on transient DB outages (#1994).**
+  `max_crashes_exceeded` gives up permanently; a transient pooler blip that trips the
+  counter wedges the supervisor until manual restart. **Why:** the #2034 reconnect fix
+  makes the engine recover, but the supervisor still hard-stops. **Where:**
+  `src/core/minions/supervisor.ts` crash-count loop — add exponential backoff with a
+  much higher (or no) permanent-give-up threshold for recoverable errors.
+- [ ] **P2 — PGLite `reindex-frontmatter` / backfill statement_timeout boost (#1963).**
+  Community RCA: `SET LOCAL statement_timeout` is gated on `engine.kind === 'postgres'`,
+  so PGLite inherits the 30s session default and trips on non-trivial batches; the CLI
+  then swallows the error and exits 0. **Where:** `src/core/backfill-effective-date.ts`
+  (boost on PGLite too, or per-row updates) + the cli.ts catch that hides it.
+- [ ] **P2 — autopilot drain-worker concurrency self-deadlock (#2050).** Drain-worker
+  runs at concurrency=1, so any cycle phase that spawns a subagent (patterns, synthesize)
+  deadlocks waiting on a worker slot it can't get. **Where:** autopilot drain-worker
+  dispatch — raise concurrency or exempt subagent-spawning phases.
+- [ ] **P3 — name-keyed migration ledger (#2038 structural follow-up).** The always-run
+  index drift probe heals the one known case; the general fix is keying applied-migration
+  tracking by stable name rather than version integer so a renumber can't strand a
+  migration as recorded-but-not-executed. **Where:** `src/core/migrate.ts` ledger.
+
+## gbrain#1981 Retrieval Reflex follow-ups (v0.43+)
+
+Filed from the #1981 ship (v0.42.39.0). Deliberately scoped OUT — the v1 extractor
+is deterministic + precision-biased. See plan + GSTACK REVIEW REPORT at
+`~/.claude/plans/system-instruction-you-are-working-wild-yeti.md`.
+
+- [ ] **P3 — broaden entity detection beyond proper-case ASCII.** The v1 extractor
+  (`src/core/context/entity-salience.ts`) misses lowercase names, many non-Latin
+  scripts, pronoun follow-ups ("what about her?"), and assistant-introduced entities.
+  These need conversation state or an LLM pass. **Why:** higher recall on the read
+  side. **Where:** `entity-salience.ts` + the orchestrator's `priorContextText`.
+- [ ] **P3 — recall knob: optional fuzzy/prefix-expansion resolution.** The resolver
+  (`src/core/context/retrieval-reflex.ts`) is exact-only (alias + title + slug-suffix)
+  for precision. Revisit adding `resolveEntitySlug`'s trgm-fuzzy / prefix-expansion
+  arm, gated on an unambiguous single hit, if recall telemetry comes back weak.
+
+## gbrain#1972 job-layer follow-up (v0.43+)
+
+Filed from the #1972 fix (stale-lock reaper + bounded disconnect + complete
+cooperative-abort). One item was deliberately gated, not deferred blindly. See plan +
+GSTACK REVIEW REPORT at `~/.claude/plans/system-instruction-you-are-working-curious-pike.md`.
+
+- [ ] **P2 — `findBacklinkGaps` sync→async refactor (gated on telemetry).** The backlinks
+  phase does its heavy work in a single synchronous call (`findBacklinkGaps`,
+  `src/commands/backlinks.ts:71` — nested `readdirSync` double-walk, no `await` seam), so it
+  cannot be cooperatively aborted: a >30s run on a huge brain blocks the event loop and gets
+  force-evicted. lint was made yield-able this wave (it was already async); backlinks needs
+  `findBacklinkGaps` converted to async-with-periodic-yields, threaded through
+  `runBacklinksCore` + `runPhaseBacklinks`. **Why gated:** the trigger is UNCONFIRMED — we
+  don't know backlinks ever exceeds 30s. This wave added the phase-duration force-evict
+  attribution log (`FORCE_EVICT_DEADLINE_MS` in `src/core/cycle.ts`), which names any phase
+  that crosses the deadline. Do this refactor only if a production 24h pull shows backlinks
+  crossing it; otherwise it's a hot-loop rewrite for a non-occurring case. **Where:**
+  `src/commands/backlinks.ts`, `src/core/cycle.ts` (runPhaseBacklinks signal threading).
+
+## gbrain#1881 sync reclone ownership follow-ups (v0.43+)
+
+Filed from the #1881 fix (`gbrain sync --strategy code` deleted a user's working
+tree; `recloneIfMissing` now only re-clones a clone gbrain OWNS — `config.managed_clone`
+marker or exact default-location equality — via `isOwnedClone`). Deliberately scoped
+OUT of that PR. Codex outside-voice findings #5/#6. See plan + GSTACK REVIEW REPORT at
+`~/.claude/plans/system-instruction-you-are-working-golden-valiant.md`.
+
+- [ ] **P2 — `gbrain doctor` misconfigured-source check.** Flag every source row
+  where `config.remote_url` is set but `isOwnedClone(row)` is false (the shape that
+  caused #1881: a federated row whose `local_path` is a user working tree). Print a
+  one-time, actionable hint per row: drop `config.remote_url` to sync it read-only,
+  or remove + re-add with `--url` so gbrain owns the clone. **Why:** the core guard
+  now refuses to delete such rows, but they still exist in users' brains (created by
+  the gstack orchestrator). This is the single surfacing point — it replaces the
+  per-sync stderr warning that was rejected during eng-review (Codex: it would spam
+  every healthy sync). **Where:** extend the doctor checks in `src/commands/doctor.ts`;
+  reuse `isOwnedClone` from `src/core/sources-ops.ts`. No migration.
+
+- [ ] **P3 — Decide the `--clone-dir`-outside-root policy.** `gbrain sources add --url
+  --clone-dir <path>` lets local callers place a gbrain-owned clone anywhere. The
+  ownership marker (this PR) makes those safe to reclone, but the dormant
+  `clone_dir_outside_gbrain` code in `SourceOpErrorCode` (`sources-ops.ts`) is unused —
+  it hints at a previously-intended confinement rule. Decide: either wire it up (forbid
+  `--clone-dir` outside `$GBRAIN_HOME/clones/`) or delete the dead code. Don't leave it
+  half-implemented. Codex finding #5.
+
+- [ ] **P2 — Harden the `managed_clone` ownership marker against forgery.** Ownership
+  (`isOwnedClone`) authorizes the destructive reclone swap on the strength of a DB JSON
+  boolean (`config.managed_clone`). Today only `addSource --url` writes it, but it's a
+  mutable field any future `set-config` / external INSERT / restored dump could set on a
+  user-tree path. A forged marker on a real (non-symlink) user path would authorize
+  deletion. (A realpath path-check does NOT close this — it false-positives on ubiquitous
+  system symlinks like macOS /var, and an owned clone gbrain created is legitimately
+  deleted through any operator symlink anyway. Path can't prove ownership.) Two follow-ups:
+  (a) a CI guard asserting NO code path other than `addSource` ever writes the
+  `managed_clone` key; (b) bind ownership to an unforgeable on-disk stamp (a `.gbrain-clone`
+  sentinel written into the clone at creation, verified before any destructive op) instead
+  of / in addition to the DB field — with an equality-fallback for pre-stamp clones. Codex
+  adversarial (High) + Claude adversarial (Finding 2) from the #1881 ship review.
+
+- [ ] **P3 — Sweep orphaned `.gbrain-reclone-*` temp dirs.** The EXDEV-safe reclone clones
+  into a sibling temp of `local_path` (`.gbrain-reclone-<leaf>-<rand>`). Every error path
+  `rmSync`s it, but a hard crash (SIGKILL/power loss) between clone and swap leaves a full
+  clone orphaned next to the user's `--clone-dir` parent — outside gbrain's swept
+  `clones/.tmp`. Add a startup/doctor sweep for `.gbrain-reclone-*` / `*.old-*` older than N
+  minutes. Codex Medium / Claude Finding 4 from the #1881 ship review.
+
+- [ ] **P3 — CLI `gbrain sources remove` leaks the managed clone dir.** `runRemove`
+  (`src/commands/sources.ts:269`) runs `DELETE FROM sources` directly, bypassing
+  `removeSource()` and its symlink-safe clone-cleanup guard — so removing a `--url`
+  source never deletes its on-disk clone (storage leak). Route CLI remove through
+  `removeSource()` (or replicate its guard) so the clone dir is cleaned with the same
+  ownership/symlink protections. Orthogonal to the deletion bug; surfaced by Codex
+  finding #6 during the #1881 review.
+
+## #1737 minion fair-scheduling follow-up (v0.43+)
+
+Filed during the #1737 wave (`/plan-eng-review` decision F7, codex outside-voice
+line 5 + Claude review agreeing). The wave shipped honest attempt accounting,
+cooperative abort-honoring (the daily cycle-wedge fix), and per-handler default
+timeouts. Slot reservation was deliberately deferred.
+
+- [ ] **P3 — Reserve a concurrency slot for short lanes so long jobs can't starve
+  fresh ones.** Today the worker claim loop (`src/core/minions/worker.ts` claim
+  loop) pulls from a single pool ordered by `priority, created_at` — N long
+  `subagent`/`embed-backfill`/`autopilot-cycle` jobs can occupy all slots while a
+  freshly-submitted short job waits (#1737's "fresh subagent never claimed"
+  half). **Why deferred:** now that abort is honored (this wave), a timed-out job
+  actually stops and frees its slot, so most of the observed starvation should
+  evaporate. **MEASURE FIRST:** before building reservation, confirm starvation
+  still reproduces with abort-honoring live (submit a short job alongside 3 long
+  ones at `--concurrency 3`; check it gets claimed). Reserving a slot is overfit
+  (breaks at `--concurrency 1`; can starve long work under continuous short
+  traffic), so only build it if the measurement shows a real residual problem.
+  **Shape if needed:** when all-but-one in-flight slot is held by long-lane
+  handler names, restrict the next `claim()` to non-long names via the existing
+  `name = ANY($4)` filter in `queue.ts:claim`. No new table/migration.
+## gbrain#1861 JSONB batch-insert follow-ups (v0.42+)
+
+Filed from the #1861 fix (batch inserts migrated from `unnest(${arr}::text[])` to
+`jsonb_to_recordset` to stop the "malformed array literal" crash on free-text
+context). Deliberately scoped OUT of that PR. See plan + GSTACK REVIEW REPORT at
+`~/.claude/plans/system-instruction-you-are-working-velvety-garden.md`.
+
+- [ ] **P3 — Element-isolation fallback for batch inserts.** On a non-retryable
+  batch error, retry the batch element-by-element so one bad row can't abort a
+  353K-page `extract --stale` sweep, logging the offending `(from_slug, context)`
+  instead of dying. The durable JSONB fix removed the known crash class (malformed
+  array literal), NUL-stripping removed a second jsonb-parse failure, and
+  v0.42.40.0 lone-surrogate well-forming (#2011) removed a third, so there is no
+  remaining *known* data-dependent crash for this to catch *today* — it's
+  belt-and-suspenders against unknown future per-row failures. Wire it in
+  `addLinksBatch`/`addTimelineEntriesBatch`/`addTakesBatch` (or in `batchRetry` as
+  a post-classification fallback). Issue #1861 option 2.
+
+- [ ] **P3 — Audit remaining `unnest(${arr}::text[])` write sites.** `setPageAliases`
+  (alias_norm) and `addCodeEdges` (symbol-qualified names + `metas::jsonb[]`) still
+  bind through text-array literals. They carry normalized identifiers / symbol names,
+  not free prose, so the crash risk is far lower than calendar context — but they are
+  the same bug class and a hostile alias/symbol (or an embedded NUL) could still trip
+  them. Migrate to `jsonb_to_recordset` via the shared `batch-rows.ts` pattern if/when
+  one is observed failing, or proactively for completeness. `markPagesExtractedBatch`
+  is NOT in this set (slugs/source-ids/timestamps only — no free text).
+
+
+- [ ] **P3 — Single-source the batch INSERT SQL strings.** After #1861 the
+  links/timeline/takes `INSERT ... jsonb_to_recordset(($1::jsonb)->'rows')` SQL is
+  byte-identical between `postgres-engine.ts` and `pglite-engine.ts` (row builders already
+  hoisted to `batch-rows.ts`, but the SQL text is still duplicated). Hoist the three SQL
+  strings into exported constants in `batch-rows.ts` so a recordset column added to one
+  engine can't silently drift from the other. `test/e2e/engine-parity.test.ts` pins
+  behavior; a shared constant prevents drift at edit time. (Maintainability specialist.)
+
+- [ ] **P3 — Backfill batch-insert edge-case tests.** Edges sharing already-covered helper
+  code but lacking direct assertions: (a) `addTakesBatch` retries on an injected retryable
+  error + AbortSignal aborts (the `batchRetry` wrap is proven for links/timeline; takes
+  inherits the identical wrapper but isn't exercised directly); (b) `addTakesBatch`
+  intra-batch duplicate `(page_id,row_num)` rejects under `ON CONFLICT DO UPDATE`
+  (comment-claimed, unasserted). (Testing specialist.)
+
+- [ ] **P3 — Enforce a max batch size on the JSONB bulk inserts.** One JSONB datum
+  is not unbounded (server-side parse/memory ceiling). In-tree callers chunk well
+  under any limit (extract ~100, NER ~500), and `batch-rows.ts` documents "chunk
+  ~1-5K rows", but nothing enforces it for an external direct-engine caller passing
+  a giant batch. Consider a `BATCH_INSERT_MAX` constant + a clear throw, mirroring
+  the existing `DELETE_BATCH_SIZE` valve in `deletePages`. Deferred because no
+  in-tree caller hits it and the cap value is a judgment call. (Codex #1861 P2b.)
+
 ## v0.42.21.0 module-singleton ownership follow-ups (v0.42+)
 
 Filed from the v0.42.21.0 wave (#1404/#1471/#1619 — the dream-cycle
@@ -49,17 +239,41 @@ GSTACK REVIEW REPORT at
   can't desync per-engine, bounded against CLI-hang by a top-level forced
   cleanup. Do this BEFORE introducing any concurrent module-engine connect path.
 
-- [ ] **P3 — `dream` + CLI_ONLY fall-through paths don't drain the facts /
-  last-retrieved queues before the owner disconnect.** The op-dispatch path
-  (`cli.ts:~282-314`) drains `getFactsQueue().drainPending()` +
-  `awaitPendingLastRetrievedWrites()` before `engine.disconnect()`; the `dream`
-  owner-disconnect (`cli.ts:~1164`) and the fall-through owner-disconnect
-  (`cli.ts:~1785`) do not. If the dream cycle ever enqueues a facts:absorb /
-  last-retrieved write that's still in flight at disconnect, the owner nulls the
-  singleton and the write throws "No database connection". Pre-existing (not
-  introduced by the #1471 ownership fix), surfaced by the Claude adversarial
-  review (F5). Fix: hoist the same drain-before-disconnect block the op-dispatch
-  path uses into a shared helper and call it on all three owner-disconnect sites.
+- [x] **P3 — `dream` + CLI_ONLY fall-through paths don't drain the facts /
+  last-retrieved queues before the owner disconnect.** DONE in the #2084 fix:
+  `finishCliTeardown` (`src/core/cli-force-exit.ts`) is exactly the shared
+  drain-before-disconnect helper this item asked for, and ALL NINE cli.ts
+  disconnect sites route through it (op-dispatch, fall-through, dream, doctor
+  ×3, ze-switch, search dashboard, read-only timeout path). Structural guard:
+  no bare `await engine.disconnect()` remains in cli.ts
+  (`test/fix-wave-structural.test.ts` `#2084` describe).
+
+- [ ] **P2 — command-module `process.exit` sites bypass the #2084 teardown
+  contract.** Several CLI_ONLY command modules exit directly on their normal
+  paths (`doctor.ts` ~10 sites incl. its verdict exit, `dream.ts` ~23,
+  `ze-switch.ts` ~9, plus friction/claw-test/eval verdict exits in cli.ts) —
+  those exits preempt the call-site `finally`, so the background-work drain,
+  bounded disconnect, and `flushThenExit` grace are all skipped on those paths
+  (pre-existing class, NOT introduced by #2084; pre-fix the same exits skipped
+  the inline drains too). Consequences: `gbrain doctor --json | <slow reader>`
+  keeps the #1959 truncation exposure; a dream path that exits mid-cycle
+  discards in-flight facts/search-cache writes. Fix shape: convert in-command
+  `process.exit(n)` to `setCliExitVerdict(n)` + return (the central seam
+  exits), or route them through a shared `exitCommand(n)` helper that runs
+  teardown first. Surfaced by the #2084 cross-model adversarial review (F2).
+
+- [ ] **P3 — opt-in whole-command wallclock cap (`GBRAIN_COMMAND_DEADLINE_MS`),
+  build ONLY on a real wedged-handler incident.** The #2084 fix deliberately
+  removed the blanket pre-handler 10s force-exit (it killed slow-legit ops with
+  exit 0 and truncated output); per-op deadlines (query-embed deadline,
+  `withTimeout` on read-only commands) own handler wallclock now, and
+  `connectEngine` hangs — the historically observed zombie class — were never
+  covered by the old timer anyway. If production ever shows a genuinely wedged
+  handler (trigger: a non-`serve` command alive >30min with no progress
+  output), add an opt-in env cap that exits NON-ZERO with a truthful banner.
+  Attach point: the `GBRAIN_TEARDOWN_DEADLINE_MS` / `computeTeardownDeadlineMs`
+  plumbing in `src/core/cli-force-exit.ts`. Do not build speculatively —
+  follow-up from the #2084 eng review (decision D2/D14).
 ## v0.42.x AI SDK v6 tool-schema fix follow-ups (#1782/#1764)
 
 Surfaced by the codex outside-voice pass during `/plan-eng-review` and
@@ -1636,11 +1850,6 @@ Three items deferred:
   self-heals via stale-reclaim). The common sync SUCCESS path already drains via
   handleCliOnly's finally. Convert for graceful drain on sync error exits.
 
-- [ ] **(v0.42.20.0 follow-up) Decouple the op-dispatch force-exit timer** so it
-  wraps `engine.disconnect()` only (it's armed before the handler today, doubling
-  as a blanket handler watchdog) and fix its misleading "engine.disconnect() did
-  not return…" message that fires even when the handler (not disconnect) was slow.
-
 - [ ] **(v0.42.20.0 follow-up) Gateway idle-timeout (vs absolute) for streaming
   chat.** `withDefaultTimeout` uses an absolute `AbortSignal.timeout`; a streaming
   generation actively producing tokens past the chat default (300s) would abort.
@@ -1756,22 +1965,18 @@ at plan time and got carved out:
 
 ## v0.40.3.0 follow-ups (v0.41+)
 
-- [ ] **v0.41+: source-scope the `sync-failures.jsonl` log so `--skip-failed` works under `--parallel > 1`.**
-  v0.40.3.0 shipped `gbrain sync --all --parallel N` as a continuous worker pool
-  with per-source DB locks. The remaining unsafe path: `recordSyncFailures()` /
-  `acknowledgeSyncFailures()` in `src/core/sync.ts` write to a brain-global JSONL
-  file at `~/.gbrain/sync-failures.jsonl` with no per-source scope. Under parallel
-  sync, source A's `--skip-failed` ack can swallow source B's failures recorded
-  while B was still running. v0.40.3.0's safe interim: refuse to combine
-  `--skip-failed` / `--retry-failed` with `--parallel > 1` (loud error, paste-ready
-  hint pointing at `--parallel 1`). The proper fix: (1) extend the JSONL row
-  schema with a `source_id` field; (2) `recordSyncFailures(failures, sourceId)`
-  stamps the field; (3) `acknowledgeSyncFailures({sourceId})` filters acks to
-  one source's rows; (4) `unacknowledgedSyncFailures({sourceId})` reads the
-  subset. Drop the v0.40.3.0 restriction once source-scoped acks are
-  deterministic. Estimate: ~1-2 days. Filed during v0.40.3.0 plan review by
-  Codex outside-voice (decision D15 → B in the eng-review plan at
-  `~/.claude/plans/system-instruction-you-are-working-fluttering-grove.md`).
+- [ ] **v0.41+: drop the `--skip-failed` / `--retry-failed` + `--parallel > 1` restriction now that the failure log is source-scoped.**
+  **Priority:** P3
+  v0.42.32.0 (#1939) landed the source-scoping infrastructure this TODO asked
+  for: `src/core/sync-failure-ledger.ts` keys every row by `(source_id, path)`,
+  `recordFailures(sourceId, …)` stamps it, `acknowledgeFailures(sourceId)` /
+  `autoSkipFailures(sourceId, …)` filter to one source, and a cross-process
+  lock + atomic temp-rename (`withLedgerLock`) makes concurrent read-modify-write
+  safe. The remaining work is just to LIFT the v0.40.3.0 interim guard at
+  `src/commands/sync.ts:3078` (`parallelEligible && (skipFailed || retryFailed)`
+  → loud refuse) after adding a test that proves source-scoped acks stay
+  deterministic under `--all --parallel N`. Estimate: ~0.5 day. Originally filed
+  during the v0.40.3.0 plan review (Codex outside-voice, decision D15 → B).
 
 - [ ] **v0.41+ (optional): extend `checkSyncFreshness` to include `embedding_coverage_pct`
   per source.** v0.40.3.0 plan originally proposed adding a NEW doctor check
@@ -3413,6 +3618,18 @@ keeping both skills' triggers intact for chaining.
 **Found:** 2026-04-24 during v0.19.0 production-readiness review.
 
 ## Completed
+
+### ~~(v0.42.20.0 follow-up) Decouple the op-dispatch force-exit timer~~
+**Completed:** v0.42.39.0 (2026-06-10)
+
+The timer now arms at teardown entry (inside the op-dispatch finally, before
+drain + disconnect) so it bounds ONLY disconnect — no longer doubling as a
+blanket handler watchdog that killed slow-but-healthy ops at 10s with exit 0
+and empty stdout. Its "engine.disconnect() did not return…" message is now
+accurate by construction (it can only fire during teardown). Read-scope
+handlers + context build got their own explicit wallclock bound (180s default,
+`--timeout=Ns`, exit 124, hard-exit after teardown) in the same wave. Pinned by
+`test/cli-force-exit-teardown-arming.test.ts`.
 
 ### ~~Checks 5 + 6 for check-resolvable~~
 **Completed:** v0.19.0 (2026-04-22)
