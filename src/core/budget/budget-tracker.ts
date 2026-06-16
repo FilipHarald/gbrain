@@ -32,6 +32,7 @@ import { mkdirSync, appendFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { gbrainPath } from '../config.ts';
 import { ANTHROPIC_PRICING, type ModelPricing } from '../anthropic-pricing.ts';
+import { canonicalLookup } from '../model-pricing.ts';
 import { EMBEDDING_PRICING, lookupEmbeddingPrice } from '../embedding-pricing.ts';
 import { splitProviderModelId } from '../model-id.ts';
 import { isoWeekFilename, resolveAuditDir } from '../audit-week-file.ts';
@@ -182,11 +183,14 @@ function lookupPricing(modelId: string, kind: BudgetKind): ModelPricing | null {
     }
     return null;
   }
-  // chat or rerank: try bare key first, then provider:model or provider/model.
-  // v0.41.21.0: route through splitProviderModelId so slash-prefixed ids
-  // (the form `--judge-model` and OpenRouter recipes emit) hit the pricing
-  // table. Pre-fix, slash-form silently no_pricing-failed `--max-cost` on
-  // brainstorm/lsd.
+  if (kind === 'chat') {
+    return canonicalLookup(modelId) ?? null;
+  }
+
+  // rerank: try bare key first, then provider:model or provider/model.
+  // v0.41.21.0: route through splitProviderModelId so slash-prefixed ids hit
+  // the pricing table. Chat now uses canonicalLookup directly so non-Anthropic
+  // provider-prefixed ids (OpenCode Zen, DeepSeek, Together, etc.) price too.
   const bare = ANTHROPIC_PRICING[modelId];
   if (bare) return bare;
   const { provider: providerId, model: modelTail } = splitProviderModelId(modelId);
@@ -274,8 +278,13 @@ export class BudgetTracker {
         // TX2: hard-fail when a cap is set but pricing is missing — without
         // pricing we can't enforce the cap, and silently ignoring it would
         // void the contract.
+        const pricingFile = estimate.kind === 'embed'
+          ? 'embedding-pricing.ts'
+          : estimate.kind === 'chat'
+            ? 'model-pricing.ts'
+            : 'anthropic-pricing.ts';
         const msg = `${this.opts.label}: no pricing entry for model "${estimate.modelId}" (kind=${estimate.kind}). ` +
-          `Add it to src/core/${estimate.kind === 'embed' ? 'embedding-pricing.ts' : 'anthropic-pricing.ts'} or drop --max-cost.`;
+          `Add it to src/core/${pricingFile} or drop --max-cost.`;
         this.fireExhausted();
         throw new BudgetExhausted(msg, {
           reason: 'no_pricing',

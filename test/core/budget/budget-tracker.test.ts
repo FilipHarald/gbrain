@@ -135,7 +135,27 @@ describe('BudgetTracker.reserve', () => {
     expect(caught).toBeInstanceOf(BudgetExhausted);
     expect((caught as BudgetExhausted).reason).toBe('no_pricing');
     expect((caught as BudgetExhausted).modelId).toBe('mystery:some-unreleased-model');
-    expect((caught as Error).message).toMatch(/anthropic-pricing\.ts/);
+    expect((caught as Error).message).toMatch(/model-pricing\.ts/);
+  });
+
+  test('OpenCode Zen chat ids use canonical pricing under --max-cost', () => {
+    const t = new BudgetTracker({ maxCostUsd: 10.0, label: 'test', auditPath });
+    expect(() =>
+      t.reserve({
+        modelId: 'opencode:deepseek-v4-pro',
+        estimatedInputTokens: 1000,
+        maxOutputTokens: 1000,
+        kind: 'chat',
+      }),
+    ).not.toThrow();
+    expect(() =>
+      t.reserve({
+        modelId: 'opencode/deepseek-v4-flash',
+        estimatedInputTokens: 1000,
+        maxOutputTokens: 1000,
+        kind: 'chat',
+      }),
+    ).not.toThrow();
   });
 
   test('v0.41.20.0: slash-prefix anthropic/claude-* under --max-cost does NOT no_pricing throw (THE FIX)', () => {

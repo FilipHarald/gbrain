@@ -25,6 +25,7 @@
  *   - Anthropic: https://platform.claude.com/docs/en/about-claude/models/overview
  *   - OpenAI:    https://openai.com/api/pricing
  *   - Google:    https://ai.google.dev/gemini-api/docs/pricing
+ *   - OpenCode Zen: https://opencode.ai/docs/zen/
  * The dream-budget audit JSONL snapshots the rate per call, so historical
  * estimates stay reproducible even after this table changes.
  *
@@ -81,6 +82,17 @@ export const CANONICAL_PRICING: Record<string, ModelPricing> = {
   // ── Together / DeepSeek (cross-modal-eval panel) ───────────────────────
   'together:meta-llama/Llama-3.3-70B-Instruct-Turbo': { input: 0.88, output: 0.88 },
   'deepseek:deepseek-chat':               { input:  0.14, output:  0.28 },
+
+  // ── OpenCode Zen /chat/completions models (verified 2026-06-16) ───────
+  'opencode:deepseek-v4-pro':             { input:  1.74, output:  3.48 },
+  'opencode:deepseek-v4-flash':           { input:  0.14, output:  0.28 },
+  'opencode:minimax-m2.7':                { input:  0.30, output:  1.20 },
+  'opencode:minimax-m2.5':                { input:  0.30, output:  1.20 },
+  'opencode:glm-5.1':                     { input:  1.40, output:  4.40 },
+  'opencode:glm-5':                       { input:  1.00, output:  3.20 },
+  'opencode:kimi-k2.5':                   { input:  0.60, output:  3.00 },
+  'opencode:kimi-k2.6':                   { input:  0.95, output:  4.00 },
+  'opencode:grok-build-0.1':              { input:  1.00, output:  2.00 },
 };
 
 /**

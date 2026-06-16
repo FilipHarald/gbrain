@@ -49,6 +49,11 @@ describe('CANONICAL_PRICING — table integrity', () => {
       CANONICAL_PRICING['google:gemini-2.0-flash'],
     );
   });
+
+  test('OpenCode Zen DeepSeek prices present from Zen pricing table', () => {
+    expect(CANONICAL_PRICING['opencode:deepseek-v4-pro']).toEqual({ input: 1.74, output: 3.48 });
+    expect(CANONICAL_PRICING['opencode:deepseek-v4-flash']).toEqual({ input: 0.14, output: 0.28 });
+  });
 });
 
 describe('canonicalLookup — id normalization', () => {
@@ -77,6 +82,11 @@ describe('canonicalLookup — id normalization', () => {
       input: 0.88,
       output: 0.88,
     });
+  });
+
+  test('OpenCode Zen ids price with provider prefix', () => {
+    expect(canonicalLookup('opencode:deepseek-v4-pro')).toEqual({ input: 1.74, output: 3.48 });
+    expect(canonicalLookup('opencode/deepseek-v4-flash')).toEqual({ input: 0.14, output: 0.28 });
   });
 
   test('null / empty → undefined (no throw)', () => {
@@ -116,6 +126,8 @@ describe('DRIFT GUARD — derived views stay equal to canonical (re-hardcode tri
       'google:gemini-2.0-flash',
       'together:meta-llama/Llama-3.3-70B-Instruct-Turbo',
       'deepseek:deepseek-chat',
+      'opencode:deepseek-v4-pro',
+      'opencode:deepseek-v4-flash',
     ]) {
       expect(canonicalLookup(id)).toBeDefined();
     }

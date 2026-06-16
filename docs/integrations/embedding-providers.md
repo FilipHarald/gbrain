@@ -38,6 +38,7 @@ The resolved provider + dimensions get persisted to `~/.gbrain/config.json` atom
 | `together` | `TOGETHER_API_KEY` | 768 | varies | no | no |
 | `anthropic` | (no embedding model — chat only) | — | — | — | — |
 | `deepseek` | (no embedding model — chat only) | — | — | — | — |
+| `opencode` | (no embedding model — chat only) | — | — | — | — |
 | `groq` | (no embedding model — chat only) | — | — | — | — |
 
 **Note on local providers.** Ollama and llama-server have no required API key, so they don't show up in env-detection auto-pick. Pick them explicitly with `--embedding-model ollama:<model>` to avoid silently routing to a daemon that may not be running.
@@ -66,6 +67,7 @@ The doctor distinguishes two repair paths:
 - **Reranking pair**: ZeroEntropy `zerank-2` is the hosted default in `tokenmax` mode (see [`docs/ai-providers/zeroentropy.md`](../ai-providers/zeroentropy.md)). Voyage `rerank-2.5` pairs cleanly with Voyage embeddings.
 - **Local reranking (no API spend)**: `llama-server-reranker` recipe (v0.40.6.1) — point gbrain at your own `llama-server --reranking` instance running Qwen3-Reranker or self-hosted ZeroEntropy weights. Same `gateway.rerank()` seam, $0 per call. Walkthrough in [`docs/ai-providers/llama-server-reranker.md`](../ai-providers/llama-server-reranker.md).
 - **One key for many hosted models**: OpenRouter. Set `OPENROUTER_API_KEY` and use `openrouter:<provider>/<model>` for chat against GPT-5.2, Claude 4.x, Gemini 3, DeepSeek, and dozens more without juggling per-provider keys. Embedding catalog includes OpenAI, Google, Qwen, BGE-M3.
+- **OpenCode Zen for gbrain's internal LLM calls**: Set `OPENCODE_API_KEY` and use `opencode:<model>` for Zen models served through the OpenAI-compatible `/chat/completions` endpoint, such as `opencode:deepseek-v4-flash`, `opencode:minimax-m2.7`, or another Zen chat-completions model.
 - **Enterprise compliance**: Azure OpenAI (data residency + private endpoints) or self-hosted via llama-server / Ollama.
 - **China region**: DashScope (Alibaba) or Zhipu (BigModel). DashScope's international endpoint at `dashscope-intl.aliyuncs.com`; override `provider_base_urls.dashscope` for the China endpoint.
 - **OSS local, full control**: llama-server (`llama.cpp`) for any GGUF model; Ollama for the curated catalog.
@@ -112,6 +114,30 @@ Single OpenAI-compatible API for fan-out to OpenAI, Anthropic, Google, DeepSeek,
 - `OPENROUTER_REFERER` (default `https://gbrain.ai`) and `OPENROUTER_TITLE` (default `gbrain`) — attribution headers for OR's leaderboard. Forks running gbrain inside a different agent stack (OpenClaw deployments etc.) should set these so their traffic gets attributed to them, not gbrain.
 
 **Subagent loops**: gbrain's subagent infrastructure hard-pins to Anthropic-direct (stable `tool_use_id` across crashes/replays). OR-routed Anthropic is rejected at submit time regardless of the recipe flag. If you want the price/availability story OR offers for tool-calling, use it for chat only and keep an Anthropic key for subagent work.
+
+### OpenCode Zen
+
+OpenCode Zen is an OpenCode-curated AI gateway. Set `OPENCODE_API_KEY` and route gbrain's internal LLM/completion calls through Zen with `opencode:<model>`.
+
+Examples:
+
+```bash
+export OPENCODE_API_KEY=...
+gbrain config set models.tier.utility opencode:deepseek-v4-flash
+gbrain config set models.tier.reasoning opencode:deepseek-v4-pro
+gbrain config set models.tier.deep opencode:deepseek-v4-pro
+gbrain config set agent.use_gateway_loop true
+```
+
+The `opencode` recipe covers Zen's OpenAI-compatible `/chat/completions` models. Representative IDs include `deepseek-v4-pro`, `deepseek-v4-flash`, `minimax-m2.7`, `glm-5.1`, `kimi-k2.6`, and `grok-build-0.1`. The model list is advisory; gbrain's OpenAI-compatible recipes accept arbitrary model IDs, so future Zen chat-completions models can be used as `opencode:<model-id>` without a code change.
+
+Zen also exposes some models through `/responses`, `/messages`, or provider-native endpoints. Those are not covered by this recipe until gbrain adds matching gateway implementations.
+
+Optional env:
+
+- `OPENCODE_BASE_URL` — override the default `https://opencode.ai/zen/v1`, mainly for testing or a compatible proxy.
+
+Privacy note: Zen's free-period models have extra data-use caveats. Do not send private brain data to `deepseek-v4-flash-free`, `mimo-v2.5-free`, `north-mini-code-free`, `nemotron-3-ultra-free`, or other free/trial Zen endpoints unless you have reviewed and accepted the current Zen privacy terms.
 
 ### Azure OpenAI
 
