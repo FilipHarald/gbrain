@@ -9,7 +9,7 @@
  * import it from `../../src/cli.ts`.
  *
  * The single ownership site for: (a) folding file-plane API keys
- * (openai/anthropic/zeroentropy) into the gateway env, and (b) threading
+ * (openai/anthropic/opencode/zeroentropy) into the gateway env, and (b) threading
  * local-server `*_BASE_URL` env vars into base_urls. Both matter for the
  * init-time embedding-key probe — without (a) it would false-warn on
  * config.json-keyed users, and without (b) a live probe could hit the wrong
@@ -21,13 +21,14 @@ import type { AIGatewayConfig } from './types.ts';
 
 export function buildGatewayConfig(c: GBrainConfig): AIGatewayConfig {
   // v0.32 (#121 reworked): when ~/.gbrain/config.json declares
-  // openai_api_key / anthropic_api_key, fold them into the gateway env so
-  // recipes that read OPENAI_API_KEY / ANTHROPIC_API_KEY find them. Process
+  // openai_api_key / anthropic_api_key / opencode_api_key, fold them into
+  // the gateway env so recipes that read provider API-key env vars find them. Process
   // env still wins (it's loaded last) — this is a fallback for daemons /
   // launchd-spawned subprocesses that don't propagate ~/.zshrc-sourced keys.
   const envFromConfig: Record<string, string> = {};
   if (c.openai_api_key) envFromConfig.OPENAI_API_KEY = c.openai_api_key;
   if (c.anthropic_api_key) envFromConfig.ANTHROPIC_API_KEY = c.anthropic_api_key;
+  if (c.opencode_api_key) envFromConfig.OPENCODE_API_KEY = c.opencode_api_key;
   // v0.37 fix wave (CDX2-5+6): ZE became the default provider in v0.36 but
   // the env-mapping at this seam never picked it up. `gbrain config set
   // zeroentropy_api_key X` wrote DB plane (ignored by gateway). The file-
@@ -52,6 +53,7 @@ export function buildGatewayConfig(c: GBrainConfig): AIGatewayConfig {
   if (process.env.LMSTUDIO_BASE_URL) envBaseUrls['lmstudio'] = process.env.LMSTUDIO_BASE_URL;
   if (process.env.LITELLM_BASE_URL) envBaseUrls['litellm'] = process.env.LITELLM_BASE_URL;
   if (process.env.OPENROUTER_BASE_URL) envBaseUrls['openrouter'] = process.env.OPENROUTER_BASE_URL;
+  if (process.env.OPENCODE_BASE_URL) envBaseUrls['opencode'] = process.env.OPENCODE_BASE_URL;
 
   return {
     embedding_model: c.embedding_model,

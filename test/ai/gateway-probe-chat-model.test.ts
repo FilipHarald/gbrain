@@ -90,10 +90,11 @@ describe('probeChatModel (#1698 = validity + key, config-independent)', () => {
   });
 
   test('non-anthropic provider passes the probe even with no key (lazy key check)', async () => {
-    // deepseek is a registered recipe; its key check is deferred to gateway.chat()
+    // DeepSeek/OpenCode are registered recipes; key checks are deferred to gateway.chat()
     // (the per-transcript-degrade contract — A9). probe should be ok here.
     await withEnv(noKeyEnv(), async () => {
       expect(probeChatModel('deepseek:deepseek-chat').ok).toBe(true);
+      expect(probeChatModel('opencode:deepseek-v4-flash').ok).toBe(true);
     });
   });
 

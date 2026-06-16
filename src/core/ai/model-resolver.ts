@@ -118,7 +118,7 @@ export function assertTouchpoint(
       touchpoint === 'embedding' && recipe.id === 'anthropic'
         ? 'Anthropic has no embedding model. Use openai or google for embeddings.'
         : touchpoint === 'chat' && (recipe.id === 'voyage' || recipe.id === 'ollama')
-          ? `${recipe.name} is configured here only for embeddings. Use openai/anthropic/google/deepseek/groq/together for chat.`
+          ? `${recipe.name} is configured here only for embeddings. Use openai/anthropic/google/openrouter/opencode/deepseek/groq/together for chat.`
           : undefined,
     );
   }

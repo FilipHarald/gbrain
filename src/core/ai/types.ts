@@ -154,6 +154,12 @@ export interface MultimodalBatchResult {
 export interface ExpansionTouchpoint {
   models: string[];
   cost_per_1m_tokens_usd?: number;
+  /**
+   * Whether the provider supports AI SDK structured object generation for this
+   * touchpoint. Defaults to true. OpenAI-compatible chat-completions gateways
+   * may accept normal text JSON prompts while rejecting responseFormat/schema.
+   */
+  supports_structured_outputs?: boolean;
   price_last_verified?: string;
 }
 

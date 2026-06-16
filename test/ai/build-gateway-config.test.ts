@@ -2,7 +2,7 @@
  * buildGatewayConfig env-baseURL passthrough sweep (v0.37.2.0).
  *
  * Mops up pre-existing untested drift: every `_BASE_URL` env var the CLI
- * reads (LLAMA_SERVER, OLLAMA, LMSTUDIO, LITELLM, OPENROUTER) was previously
+ * reads (LLAMA_SERVER, OLLAMA, LMSTUDIO, LITELLM, OPENROUTER, OPENCODE) was previously
  * uncovered by unit tests. The helper was file-local so the test surface
  * didn't exist; v0.37.2.0 exports it for the OR passthrough plus the four
  * legacy passthroughs by parameterized sweep.
@@ -29,6 +29,7 @@ const PASSTHROUGHS: Array<{ envVar: string; recipeId: string }> = [
   { envVar: 'LMSTUDIO_BASE_URL', recipeId: 'lmstudio' },
   { envVar: 'LITELLM_BASE_URL', recipeId: 'litellm' },
   { envVar: 'OPENROUTER_BASE_URL', recipeId: 'openrouter' },
+  { envVar: 'OPENCODE_BASE_URL', recipeId: 'opencode' },
 ];
 
 const TEST_VALUE = 'http://proxy.example.test/v1';
@@ -83,5 +84,14 @@ describe('buildGatewayConfig env-baseURL passthrough', () => {
         expect(cfg.base_urls?.openrouter).toBe('http://config.example/v1');
       },
     );
+  });
+
+  test('opencode_api_key maps to OPENCODE_API_KEY in gateway env', async () => {
+    await withEnv({ OPENCODE_API_KEY: undefined }, async () => {
+      const cfg = buildGatewayConfig({
+        opencode_api_key: 'sk-opencode-from-config',
+      } as unknown as GBrainConfig);
+      expect(cfg.env.OPENCODE_API_KEY).toBe('sk-opencode-from-config');
+    });
   });
 });
