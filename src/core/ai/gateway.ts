@@ -2154,6 +2154,20 @@ const ExpansionSchema = z.object({
   queries: z.array(z.string()).min(1).max(5),
 });
 
+function parseExpansionQueriesFromText(text: string): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate = (fenced?.[1] ?? trimmed).trim();
+  try {
+    const parsed = JSON.parse(candidate);
+    const result = ExpansionSchema.safeParse(parsed);
+    return result.success ? result.data.queries : [];
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Expand a search query into up to 4 related queries.
  * Returns the original query PLUS expansions. On failure, returns just the original.
@@ -2172,22 +2186,33 @@ export async function expand(query: string): Promise<string[]> {
 
   try {
     const { model, recipe, modelId } = await resolveExpansionProvider(getExpansionModel());
-    const result = await generateObject({
-      model,
-      schema: ExpansionSchema,
-      // v0.42.20.0 (codex P0) — expansion had NO abortSignal; same stalled-socket
-      // class as chat. Default the chat timeout.
-      abortSignal: withDefaultTimeout(undefined, AI_CHAT_TIMEOUT_MS),
-      prompt: [
-        'Rewrite the search query below into 3-4 different, related queries that would help find relevant documents.',
-        'Return ONLY the JSON object. Do NOT include the original query in the result.',
-        'Each rewrite should emphasize different aspects, synonyms, or framings.',
-        '',
-        `Query: ${query}`,
-      ].join('\n'),
-    });
+    const prompt = [
+      'Rewrite the search query below into 3-4 different, related queries that would help find relevant documents.',
+      'Return ONLY the JSON object. Do NOT include the original query in the result.',
+      'Each rewrite should emphasize different aspects, synonyms, or framings.',
+      '',
+      `Query: ${query}`,
+    ].join('\n');
 
-    const expansions = result.object?.queries ?? [];
+    let expansions: string[];
+    if (recipe.touchpoints.expansion?.supports_structured_outputs === false) {
+      const result = await generateText({
+        model,
+        // v0.42.20.0 (codex P0) — expansion had NO abortSignal; same stalled-socket
+        // class as chat. Default the chat timeout.
+        abortSignal: withDefaultTimeout(undefined, AI_CHAT_TIMEOUT_MS),
+        prompt,
+      });
+      expansions = parseExpansionQueriesFromText(result.text);
+    } else {
+      const result = await generateObject({
+        model,
+        schema: ExpansionSchema,
+        abortSignal: withDefaultTimeout(undefined, AI_CHAT_TIMEOUT_MS),
+        prompt,
+      });
+      expansions = result.object?.queries ?? [];
+    }
     // Deduplicate + include the original query
     const seen = new Set<string>();
     const all = [query, ...expansions].filter(q => {

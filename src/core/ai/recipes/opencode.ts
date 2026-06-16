@@ -19,6 +19,25 @@ export const opencode: Recipe = {
     setup_url: 'https://opencode.ai/zen',
   },
   touchpoints: {
+    expansion: {
+      // gbrain expansion uses the same OpenAI-compatible chat-completions
+      // transport as chat. Zen does not support AI SDK structured outputs
+      // here, so gateway.expand falls back to text JSON parsing.
+      models: [
+        'deepseek-v4-flash',
+        'deepseek-v4-pro',
+        'minimax-m2.7',
+        'minimax-m2.5',
+        'glm-5.1',
+        'glm-5',
+        'kimi-k2.5',
+        'kimi-k2.6',
+        'big-pickle',
+      ],
+      cost_per_1m_tokens_usd: 0.28,
+      supports_structured_outputs: false,
+      price_last_verified: '2026-06-16',
+    },
     chat: {
       // Curated from Zen's OpenAI-compatible /chat/completions table
       // (verified 2026-06-16). The openai-compat tier accepts arbitrary

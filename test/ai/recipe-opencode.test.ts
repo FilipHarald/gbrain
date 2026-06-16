@@ -28,6 +28,20 @@ describe('recipe: opencode', () => {
     expect(r!.auth_env?.optional).toContain('OPENCODE_BASE_URL');
   });
 
+  test('expansion touchpoint uses Zen /chat/completions models', () => {
+    const r = getRecipe('opencode')!;
+    const expansion = r.touchpoints.expansion;
+    expect(expansion).toBeDefined();
+    expect(expansion!.models).toContain('deepseek-v4-flash');
+    expect(expansion!.models).toContain('deepseek-v4-pro');
+    expect(expansion!.models).toContain('minimax-m2.7');
+    expect(expansion!.models).toContain('glm-5.1');
+    expect(expansion!.models).toContain('kimi-k2.6');
+    for (const model of expansion!.models) {
+      expect(model, `Zen expansion model "${model}" should be a bare Zen model id`).toMatch(MODEL_SHAPE);
+    }
+  });
+
   test('chat touchpoint lists Zen /chat/completions entry points', () => {
     const r = getRecipe('opencode')!;
     const chat = r.touchpoints.chat;
@@ -54,13 +68,19 @@ describe('recipe: opencode', () => {
 
   test('defaultResolveAuth with OPENCODE_API_KEY returns Bearer header', () => {
     const r = getRecipe('opencode')!;
-    const auth = defaultResolveAuth(
+    const chatAuth = defaultResolveAuth(
       r,
       { OPENCODE_API_KEY: 'sk-opencode-fake' },
       'chat',
     );
-    expect(auth.headerName).toBe('Authorization');
-    expect(auth.token).toBe('Bearer sk-opencode-fake');
+    const expansionAuth = defaultResolveAuth(
+      r,
+      { OPENCODE_API_KEY: 'sk-opencode-fake' },
+      'expansion',
+    );
+    expect(chatAuth.headerName).toBe('Authorization');
+    expect(chatAuth.token).toBe('Bearer sk-opencode-fake');
+    expect(expansionAuth).toEqual(chatAuth);
   });
 
   test('missing OPENCODE_API_KEY throws AIConfigError', () => {
