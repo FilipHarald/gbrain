@@ -48,6 +48,7 @@ import {
   readSupervisorEvents,
   summarizeCrashes,
 } from '../core/minions/handlers/supervisor-audit.ts';
+import { readLatestCycleCompletion } from '../core/cycle-status.ts';
 
 const SCHEMA_VERSION = 1 as const;
 
@@ -194,8 +195,26 @@ export async function buildCycleSnapshot(engine: BrainEngine): Promise<CycleSnap
     };
   };
 
+  const toRecordedCycleRow = (finishedAt: string | null | undefined): CycleRow | null => {
+    if (!finishedAt) return null;
+    return {
+      finished_at: isoOrNull(finishedAt),
+      name: 'runCycle',
+      status: 'completed',
+      duration_ms: null,
+      totals: null,
+    };
+  };
+
   let fullRow: Row | undefined;
   let targetedRow: Row | undefined;
+  let recordedFull: CycleRow | null = null;
+  try {
+    const latest = await readLatestCycleCompletion(engine);
+    recordedFull = toRecordedCycleRow(latest?.finished_at);
+  } catch {
+    /* fall through — no recorded completion */
+  }
   try {
     const fullRows = await engine.executeRaw<Row>(
       `SELECT finished_at, name, status, started_at, result
@@ -220,7 +239,7 @@ export async function buildCycleSnapshot(engine: BrainEngine): Promise<CycleSnap
   } catch {
     /* fall through */
   }
-  return { last_full: toCycleRow(fullRow), last_targeted: toCycleRow(targetedRow) };
+  return { last_full: recordedFull ?? toCycleRow(fullRow), last_targeted: toCycleRow(targetedRow) };
 }
 
 // ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@
  * was unspecified pre-PR).
  *
  * Conditions for write:
- *   - opts.sourceId is set (legacy callers without sourceId skip the write)
+ *   - sourceId is explicit or resolvable from brainDir
  *   - engine is non-null (no-DB path skips)
  *   - status is 'ok' | 'clean' | 'partial' (failed/skipped don't mark fresh)
  *   - dryRun is false
@@ -16,6 +16,7 @@ import { PGLiteEngine } from '../src/core/pglite-engine.ts';
 import { resetPgliteState } from './helpers/reset-pglite.ts';
 import { withEnv } from './helpers/with-env.ts';
 import { runCycle } from '../src/core/cycle.ts';
+import { buildCycleSnapshot } from '../src/commands/status.ts';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -90,17 +91,34 @@ describe('runCycle last_full_cycle_at exit hook', () => {
     });
   });
 
-  test('legacy caller (no sourceId) does NOT write any source timestamp', async () => {
+  test('caller without sourceId writes timestamp when brainDir resolves to a source', async () => {
     await withEnv({ GBRAIN_HOME: gbrainHome }, async () => {
       await seedSource('default-like');
-      // No sourceId passed; should remain untouched.
-      await runCycle(engine, {
+      const report = await runCycle(engine, {
         brainDir,
         phases: ['lint'],
       });
-      // No per-source write happens; default source's config stays empty.
+      expect(['ok', 'clean']).toContain(report.status);
+
       const after = await readLastFullCycleAt('default-like');
-      expect(after).toBeNull();
+      expect(after).not.toBeNull();
+    });
+  });
+
+  test('status last_full reads direct runCycle completion without a minion job row', async () => {
+    await withEnv({ GBRAIN_HOME: gbrainHome }, async () => {
+      await seedSource('status-source');
+      await runCycle(engine, { brainDir, phases: ['lint'] });
+
+      const jobs = await engine.executeRaw<{ n: number }>(
+        `SELECT count(*)::int AS n FROM minion_jobs WHERE name = 'autopilot-cycle' AND status = 'completed'`,
+      );
+      expect(jobs[0]?.n ?? 0).toBe(0);
+
+      const snapshot = await buildCycleSnapshot(engine);
+      expect(snapshot.last_full?.name).toBe('runCycle');
+      expect(snapshot.last_full?.status).toBe('completed');
+      expect(snapshot.last_full?.finished_at).toBe(await readLastFullCycleAt('status-source'));
     });
   });
 
